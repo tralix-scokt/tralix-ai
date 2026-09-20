@@ -2,68 +2,48 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
-  >
-
-  <meta
-    name="description"
-    content="TRALIX AI - Intelligent AI Assistant"
-  >
-
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="TRALIX AI - Local AI Assistant">
   <title>TRALIX AI</title>
-
   <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
-
   <div class="app">
 
     <header class="topbar">
-
       <div class="brand">
-
-        <div class="logo">
-          T
-        </div>
+        <div class="logo">T</div>
 
         <div>
           <h1>TRALIX</h1>
           <span>AI ASSISTANT</span>
         </div>
-
       </div>
 
       <div class="status">
-        <span class="status-dot"></span>
-        ONLINE
+        <span id="statusDot" class="status-dot"></span>
+        <span id="statusText">LOADING AI</span>
       </div>
-
     </header>
-
 
     <main id="chat" class="chat">
 
-      <section class="welcome">
-
-        <div class="orb">
-          T
-        </div>
+      <section id="welcome" class="welcome">
+        <div class="orb">T</div>
 
         <h2>Hello, I'm TRALIX.</h2>
 
         <p>
-          Your intelligent AI assistant.
-          Ask me anything.
+          Your private AI assistant running directly in your browser.
         </p>
 
+        <p id="modelStatus">
+          Preparing local AI...
+        </p>
       </section>
 
     </main>
-
 
     <footer class="composer">
 
@@ -73,11 +53,13 @@
           id="messageInput"
           placeholder="Ask TRALIX anything..."
           rows="1"
+          disabled
         ></textarea>
 
         <button
           id="sendButton"
           type="button"
+          disabled
         >
           ➤
         </button>
@@ -85,14 +67,14 @@
       </div>
 
       <p class="disclaimer">
-        TRALIX can make mistakes. Verify important information.
+        TRALIX AI runs locally in your browser. Your messages are not sent to an AI API.
       </p>
 
     </footer>
 
   </div>
 
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 
 </body>
 </html>
