@@ -1,0 +1,44 @@
+{
+  "name": "tralix-ai",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TRALIX AI — a text-first AI assistant with real-time web knowledge.",
+  "type": "module",
+  "engines": { "node": ">=20.12" },
+  "scripts": {
+    "dev": "concurrently -k -n server,web -c blue,magenta \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "tsx watch server/index.ts",
+    "dev:web": "vite",
+    "build": "npm run build:web && npm run build:server",
+    "build:web": "vite build",
+    "build:server": "tsc -p tsconfig.server.json",
+    "start": "node dist/server/server/index.js",
+    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "express": "^5.1.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@fontsource-variable/inter": "^5.2.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "concurrently": "^9.0.0",
+    "lucide-react": "^0.500.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-markdown": "^10.0.0",
+    "rehype-highlight": "^7.0.0",
+    "remark-gfm": "^4.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.0.0",
+    "vitest": "^3.2.0"
+  }
+}
