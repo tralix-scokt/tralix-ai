@@ -10,6 +10,14 @@ export interface Source {
   snippet?: string;
 }
 
+export interface Attachment {
+  id: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  url: string;
+}
+
 export interface ChatMessage {
   id: string;
   conversationId: string;
@@ -17,6 +25,7 @@ export interface ChatMessage {
   content: string;
   status: MessageStatus;
   sources: Source[];
+  attachments?: Attachment[];
   createdAt: number;
 }
 
@@ -33,8 +42,18 @@ export interface ConversationDetail extends ConversationSummary {
 
 export interface UserProfile {
   id: string;
+  email?: string;
   displayName: string;
   customInstructions: string;
+  memoryEnabled: boolean;
+  isAnonymous?: boolean;
+}
+
+export interface MemoryItem {
+  id: string;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export type CapabilityState = 'active' | 'unavailable' | 'coming_soon';
@@ -65,9 +84,11 @@ export interface ChatRequest {
   content?: string;
   /** Required for `edit`: the user message being edited. */
   messageId?: string;
+  /** Optional attachment IDs associated with the message */
+  attachmentIds?: string[];
 }
 
-export type AiStatus = 'thinking' | 'searching' | 'writing';
+export type AiStatus = 'thinking' | 'searching' | 'writing' | 'generating_image';
 
 /** Server-sent events emitted by POST /api/chat. */
 export type StreamEvent =
@@ -77,4 +98,5 @@ export type StreamEvent =
   | { type: 'sources'; sources: Source[] }
   | { type: 'title'; title: string }
   | { type: 'done'; message: ChatMessage }
+  | { type: 'memory_updated'; count: number }
   | { type: 'error'; code: string; message: string; retryable: boolean };

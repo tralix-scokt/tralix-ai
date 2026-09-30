@@ -1,6 +1,15 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { AlertCircle, ArrowDown, Menu, PanelLeftOpen, RotateCcw, SquarePen, X } from 'lucide-react';
-import type { Capabilities, ConversationSummary, UserProfile } from '../../shared/types';
+import {
+  AlertCircle,
+  ArrowDown,
+  Brain,
+  Menu,
+  PanelLeftOpen,
+  RotateCcw,
+  SquarePen,
+  X,
+} from 'lucide-react';
+import type { Attachment, Capabilities, ConversationSummary, UserProfile } from '../../shared/types';
 import { api } from './lib/api';
 import { useChat } from './lib/useChat';
 import { Composer } from './components/Composer';
@@ -25,9 +34,12 @@ export default function App() {
   const [drawer, setDrawer] = useState(false);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('tralix.sidebar') === 'collapsed');
   const [settings, setSettings] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<'profile' | 'account' | 'memory' | 'capabilities'>('profile');
   const [toDelete, setToDelete] = useState<ConversationSummary | 'all' | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
+  const [memoryIndicator, setMemoryIndicator] = useState(false);
+
   const queryRef = useRef('');
   queryRef.current = query;
 
@@ -36,11 +48,22 @@ export default function App() {
     setConversations((prev) => {
       const cur = prev.find((x) => x.id === c.id);
       if (!cur) return sortConvs([c, ...prev]);
-      return sortConvs(prev.map((x) => (x.id === c.id ? { ...x, title: c.title, updatedAt: Math.max(x.updatedAt, c.updatedAt) } : x)));
+      return sortConvs(
+        prev.map((x) => (x.id === c.id ? { ...x, title: c.title, updatedAt: Math.max(x.updatedAt, c.updatedAt) } : x)),
+      );
     });
   }, []);
 
-  const chat = useChat({ onConversation: upsert, onRestoreDraft: setDraft });
+  const handleMemoryUpdated = useCallback(() => {
+    setMemoryIndicator(true);
+    setTimeout(() => setMemoryIndicator(false), 3000);
+  }, []);
+
+  const chat = useChat({
+    onConversation: upsert,
+    onRestoreDraft: setDraft,
+    onMemoryUpdated: handleMemoryUpdated,
+  });
   const { openConversation } = chat;
 
   const flash = useCallback((m: string) => {
@@ -56,10 +79,11 @@ export default function App() {
       .then(setUser)
       .catch((e) => setBootError((e as Error).message));
     const id = routeId();
-    if (id)
+    if (id) {
       openConversation(id).then((ok) => {
         if (!ok) window.history.replaceState(null, '', '/');
       });
+    }
     const onPop = () => {
       const rid = routeId();
       openConversation(rid).then((ok) => !ok && window.history.replaceState(null, '', '/'));
@@ -68,7 +92,7 @@ export default function App() {
     return () => window.removeEventListener('popstate', onPop);
   }, [openConversation]);
 
-  // ---- conversation list (with debounced server-side search) ----
+  // ---- conversation list (with debounced search) ----
   useEffect(() => {
     let cancelled = false;
     const t = setTimeout(
@@ -140,12 +164,12 @@ export default function App() {
     [chat.conversationId, openConversation],
   );
 
-  const send = () => {
+  const send = (attachments: Attachment[]) => {
     const text = draft;
-    if (!text.trim() || chat.generating) return;
+    if ((!text.trim() && !attachments.length) || chat.generating) return;
     setDraft('');
     stick.current = true;
-    chat.send(text);
+    chat.send(text, attachments);
   };
 
   const rename = async (id: string, title: string) => {
@@ -180,11 +204,20 @@ export default function App() {
     }
   };
 
+  const handleLogout = async () => {
+    await api.logout();
+    const me = await api.me();
+    setUser(me);
+    newChat();
+    flash('Logged out successfully.');
+  };
+
   const { messages, generating, status, error } = chat;
   const empty = messages.length === 0 && !chat.loading;
   const last = messages[messages.length - 1];
   const modelDown = !!caps && caps.text.state !== 'active';
   const awaitingReply = !generating && !error && last?.role === 'user' && !last.id.startsWith('tmp-') && !chat.loading;
+  const visionActive = caps?.imageUnderstanding?.state === 'active';
 
   return (
     <div className={`app ${collapsed ? 'sidebar-collapsed' : ''}`}>
@@ -202,6 +235,7 @@ export default function App() {
           onRename={rename}
           onDelete={setToDelete}
           onSettings={() => {
+            setSettingsTab('profile');
             setSettings(true);
             setDrawer(false);
           }}
@@ -215,7 +249,13 @@ export default function App() {
             <Menu size={22} />
           </button>
           {collapsed && (
-            <button type="button" className="icon-btn desktop-only" onClick={() => setCollapsed(false)} aria-label="Open sidebar" title="Open sidebar">
+            <button
+              type="button"
+              className="icon-btn desktop-only"
+              onClick={() => setCollapsed(false)}
+              aria-label="Open sidebar"
+              title="Open sidebar"
+            >
               <PanelLeftOpen size={20} />
             </button>
           )}
@@ -224,13 +264,27 @@ export default function App() {
               <h1 title={chat.title}>{chat.title}</h1>
             ) : (
               <span className="topbar-brand">
-                <Logo size={22} /> TRALIX <b>AI</b>
+                <Logo size={22} /> TRALIX <b>AI</b> <small className="v2-badge">V2</small>
               </span>
             )}
           </div>
-          <button type="button" className={`icon-btn ${collapsed ? '' : 'mobile-only'}`} onClick={newChat} aria-label="New chat" title="New chat">
-            <SquarePen size={20} />
-          </button>
+
+          <div className="topbar-actions">
+            {memoryIndicator && (
+              <div className="memory-indicator-badge" role="status">
+                <Brain size={14} /> Memory updated
+              </div>
+            )}
+            <button
+              type="button"
+              className={`icon-btn ${collapsed ? '' : 'mobile-only'}`}
+              onClick={newChat}
+              aria-label="New chat"
+              title="New chat"
+            >
+              <SquarePen size={20} />
+            </button>
+          </div>
         </header>
 
         <div className="scroller" ref={scroller} onScroll={onScroll}>
@@ -246,7 +300,10 @@ export default function App() {
               caps={caps}
               disabled={generating || modelDown}
               onPick={(p) => chat.send(p)}
-              onOpenSettings={() => setSettings(true)}
+              onOpenSettings={() => {
+                setSettingsTab('capabilities');
+                setSettings(true);
+              }}
             />
           ) : (
             <div className="thread">
@@ -263,7 +320,8 @@ export default function App() {
                   onEdit={chat.edit}
                 />
               ))}
-              {/* Real status while waiting for the first bytes of a reply. */}
+
+              {/* Status while waiting for first bytes */}
               {generating && last?.role === 'user' && status && (
                 <div className="msg msg-ai">
                   <div className="avatar" aria-hidden="true">
@@ -277,18 +335,21 @@ export default function App() {
                         <i />
                       </span>
                       <span className="status-label">
-                        {status.status === 'searching'
-                          ? status.detail
-                            ? `Searching the web for “${status.detail}”…`
-                            : 'Searching…'
-                          : status.status === 'writing'
-                            ? 'Writing…'
-                            : 'Thinking…'}
+                        {status.status === 'generating_image'
+                          ? status.detail || 'Generating image…'
+                          : status.status === 'searching'
+                            ? status.detail
+                              ? `Searching the web for “${status.detail}”…`
+                              : 'Searching…'
+                            : status.status === 'writing'
+                              ? 'Writing…'
+                              : 'Thinking…'}
                       </span>
                     </div>
                   </div>
                 </div>
               )}
+
               {error && (
                 <div className="notice error" role="alert">
                   <AlertCircle size={18} />
@@ -308,6 +369,7 @@ export default function App() {
                   </div>
                 </div>
               )}
+
               {awaitingReply && (
                 <div className="notice">
                   <AlertCircle size={18} />
@@ -322,20 +384,6 @@ export default function App() {
                   </div>
                 </div>
               )}
-            </div>
-          )}
-          {error && empty && (
-            <div className="thread">
-              <div className="notice error" role="alert">
-                <AlertCircle size={18} />
-                <div>
-                  <strong>{error.message}</strong>
-                  <span>Your message is still in the box — you can send it again.</span>
-                </div>
-                <button type="button" className="icon-btn sm" onClick={chat.dismissError} aria-label="Dismiss">
-                  <X size={16} />
-                </button>
-              </div>
             </div>
           )}
         </div>
@@ -353,20 +401,30 @@ export default function App() {
           onStop={chat.stop}
           generating={generating}
           autoFocus={empty}
+          visionEnabled={visionActive}
         />
       </main>
 
       {settings && user && (
         <Suspense fallback={null}>
-          <SettingsModal user={user} caps={caps} onClose={() => setSettings(false)} onSaved={setUser} onDeleteAll={() => setToDelete('all')} />
+          <SettingsModal
+            user={user}
+            caps={caps}
+            initialTab={settingsTab}
+            onClose={() => setSettings(false)}
+            onSaved={setUser}
+            onDeleteAll={() => setToDelete('all')}
+            onLogout={handleLogout}
+          />
         </Suspense>
       )}
+
       {toDelete && (
         <ConfirmDialog
           title={toDelete === 'all' ? 'Delete all conversations?' : 'Delete conversation?'}
           body={
             toDelete === 'all'
-              ? 'This permanently deletes every conversation on this device. This cannot be undone.'
+              ? 'This permanently deletes every conversation on this account. This cannot be undone.'
               : `“${toDelete.title}” will be permanently deleted. This cannot be undone.`
           }
           confirmLabel="Delete"
@@ -375,6 +433,7 @@ export default function App() {
           onCancel={() => setToDelete(null)}
         />
       )}
+
       {toast && (
         <div className="toast" role="status">
           {toast}

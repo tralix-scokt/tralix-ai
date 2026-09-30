@@ -1,9 +1,21 @@
 import { lazy, memo, Suspense, useEffect, useRef, useState } from 'react';
-import { Check, Copy, ExternalLink, Globe, Pencil, RefreshCw, StepForward } from 'lucide-react';
-import type { AiStatus, ChatMessage, Source } from '../../../shared/types';
+import {
+  Check,
+  Copy,
+  Download,
+  ExternalLink,
+  Globe,
+  Pencil,
+  RefreshCw,
+  Sparkles,
+  StepForward,
+  Video,
+} from 'lucide-react';
+import type { AiStatus, Attachment, ChatMessage, Source } from '../../../shared/types';
 import { copyText } from '../lib/clipboard';
 import { Logo } from './Logo';
-// Markdown + syntax highlighting is the heaviest dependency: load it on demand so the first paint is fast.
+
+// Markdown + syntax highlighting is loaded on demand
 const Markdown = lazy(() => import('./Markdown').then((m) => ({ default: m.Markdown })));
 
 const domain = (url: string) => {
@@ -15,8 +27,15 @@ const domain = (url: string) => {
 };
 
 function StatusPill({ status, detail }: { status: AiStatus; detail?: string }) {
-  const label =
-    status === 'searching' ? (detail ? `Searching the web for “${detail}”…` : 'Searching…') : status === 'writing' ? 'Writing…' : 'Thinking…';
+  let label = 'Thinking…';
+  if (status === 'generating_image') {
+    label = detail || 'Generating image…';
+  } else if (status === 'searching') {
+    label = detail ? `Searching the web for “${detail}”…` : 'Searching…';
+  } else if (status === 'writing') {
+    label = 'Writing…';
+  }
+
   return (
     <div className={`status-pill status-${status}`} role="status" aria-live="polite">
       <span className="status-dots" aria-hidden="true">
@@ -29,19 +48,79 @@ function StatusPill({ status, detail }: { status: AiStatus; detail?: string }) {
   );
 }
 
+function MessageAttachments({ attachments }: { attachments?: Attachment[] }) {
+  if (!attachments || !attachments.length) return null;
+  return (
+    <div className="msg-attachments">
+      {attachments.map((att) => {
+        const isImg = att.mimeType.startsWith('image/');
+        const isVid = att.mimeType.startsWith('video/');
+        return (
+          <div key={att.id} className="msg-attachment-item">
+            {isImg && (
+              <a href={att.url} target="_blank" rel="noopener noreferrer" className="msg-attachment-link">
+                <img src={att.url} alt={att.filename} className="msg-attachment-image" />
+              </a>
+            )}
+            {isVid && (
+              <div className="msg-attachment-video">
+                <div className="video-icon-wrap">
+                  <Video size={18} />
+                </div>
+                <div className="video-meta">
+                  <span className="video-title">{att.filename}</span>
+                  <span className="video-note">Analysed from sampled frames</span>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function GeneratedImageCard({
+  imageUrl,
+  prompt,
+  onRegenerate,
+}: {
+  imageUrl: string;
+  prompt: string;
+  onRegenerate: () => void;
+}) {
+  const downloadUrl = `${imageUrl}?download=1`;
+  return (
+    <div className="generated-image-card">
+      <div className="image-wrap">
+        <img src={imageUrl} alt={prompt || 'Generated image'} className="generated-image-preview" />
+      </div>
+      <div className="image-card-actions">
+        <a href={downloadUrl} download className="btn sm secondary" title="Download image to device">
+          <Download size={14} /> Download
+        </a>
+        <button type="button" className="btn sm ghost" onClick={onRegenerate} title="Regenerate image">
+          <RefreshCw size={14} /> Regenerate
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function Sources({ sources }: { sources: Source[] }) {
   const [open, setOpen] = useState(false);
-  if (!sources.length) return null;
+  const webSources = sources.filter((s) => !s.url.startsWith('/api/images/'));
+  if (!webSources.length) return null;
   return (
     <div className="sources">
       <button type="button" className="sources-toggle" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
         <Globe size={14} />
         <span>
-          {sources.length} source{sources.length === 1 ? '' : 's'}
+          {webSources.length} source{webSources.length === 1 ? '' : 's'}
         </span>
       </button>
       <div className={`sources-list ${open ? 'open' : ''}`}>
-        {(open ? sources : sources.slice(0, 3)).map((s, i) => (
+        {(open ? webSources : webSources.slice(0, 3)).map((s, i) => (
           <a key={s.url} className="source-chip" href={s.url} target="_blank" rel="noopener noreferrer nofollow" title={s.title}>
             <span className="source-index">{i + 1}</span>
             <span className="source-text">
@@ -51,9 +130,9 @@ function Sources({ sources }: { sources: Source[] }) {
             <ExternalLink size={12} className="source-ext" />
           </a>
         ))}
-        {!open && sources.length > 3 && (
+        {!open && webSources.length > 3 && (
           <button type="button" className="source-more" onClick={() => setOpen(true)}>
-            +{sources.length - 3} more
+            +{webSources.length - 3} more
           </button>
         )}
       </div>
@@ -106,6 +185,9 @@ export const MessageView = memo(function MessageView(p: Props) {
     }
   }, [editing, draft]);
 
+  // Extract generated image URLs if present in message content
+  const generatedImageMatch = /!\[(.*?)\]\((\/api\/images\/[0-9a-f-]+)\)/i.exec(m.content);
+
   if (m.role === 'user') {
     const canEdit = !p.generating && !m.id.startsWith('tmp-');
     return (
@@ -145,9 +227,10 @@ export const MessageView = memo(function MessageView(p: Props) {
           </div>
         ) : (
           <>
-            <div className="bubble">{m.content}</div>
+            <MessageAttachments attachments={m.attachments} />
+            {m.content && <div className="bubble">{m.content}</div>}
             <div className="msg-actions user-actions">
-              <CopyButton text={m.content} label="Copy message" />
+              {m.content && <CopyButton text={m.content} label="Copy message" />}
               {canEdit && (
                 <button
                   type="button"
@@ -185,16 +268,33 @@ export const MessageView = memo(function MessageView(p: Props) {
             </Suspense>
           </div>
         )}
+
+        {generatedImageMatch && !busy && (
+          <GeneratedImageCard
+            imageUrl={generatedImageMatch[2]}
+            prompt={generatedImageMatch[1]}
+            onRegenerate={p.onRegenerate}
+          />
+        )}
+
         <Sources sources={m.sources} />
         {!busy && (m.status === 'stopped' || m.status === 'error') && m.content && (
-          <div className="msg-note">{m.status === 'stopped' ? 'Response stopped.' : 'This response was interrupted.'}</div>
+          <div className="msg-note">
+            {m.status === 'stopped' ? 'Response stopped.' : 'This response was interrupted.'}
+          </div>
         )}
         {showActions && (
           <div className="msg-actions">
             <CopyButton text={m.content} label="Copy response" />
             {p.isLast && !p.generating && (
               <>
-                <button type="button" className="icon-btn sm" title="Regenerate response" aria-label="Regenerate response" onClick={p.onRegenerate}>
+                <button
+                  type="button"
+                  className="icon-btn sm"
+                  title="Regenerate response"
+                  aria-label="Regenerate response"
+                  onClick={p.onRegenerate}
+                >
                   <RefreshCw size={16} />
                 </button>
                 {(m.status === 'stopped' || m.status === 'error') && (
