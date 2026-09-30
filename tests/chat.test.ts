@@ -226,7 +226,7 @@ describe('conversations & auth', () => {
     const caps = await (await fetch(`${t.base}/api/capabilities`)).json();
     expect(caps.text.state).toBe('active');
     expect(caps.webSearch).toEqual({ state: 'active', detail: 'test-search' });
-    expect(caps.imageGeneration.state).toBe('coming_soon');
+    expect(caps.imageGeneration.state).toBe('unavailable');
     expect(JSON.stringify(caps)).not.toContain('sk-test');
   });
 });

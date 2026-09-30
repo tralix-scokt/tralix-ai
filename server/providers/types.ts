@@ -97,11 +97,13 @@ export interface SearchProvider {
   search(req: SearchRequest): Promise<SearchResult[]>;
 }
 
-// ---------- Future capabilities (interfaces only — not implemented in V1) ----------
+// ---------- Future capabilities (interfaces) ----------
 
 export interface ImageGenerationProvider {
   readonly id: string;
-  generate(req: { prompt: string; size?: string; signal?: AbortSignal }): Promise<{ url: string; mimeType: string }>;
+  isConfigured(): boolean;
+  describe(): string | undefined;
+  generate(req: { prompt: string; size?: string; signal?: AbortSignal }): Promise<{ buffer: Buffer; mimeType: string }>;
 }
 export interface VoiceProvider {
   readonly id: string;
@@ -110,7 +112,9 @@ export interface VoiceProvider {
 }
 export interface VisionProvider {
   readonly id: string;
-  analyze(req: { prompt: string; image: ArrayBuffer; mimeType: string }): Promise<string>;
+  isConfigured(): boolean;
+  describe(): string | undefined;
+  analyze(req: { prompt: string; images: { buffer: Buffer; mimeType: string }[]; signal?: AbortSignal }): Promise<string>;
 }
 export interface VideoProvider {
   readonly id: string;

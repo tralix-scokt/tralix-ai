@@ -1,21 +1,38 @@
-import { useEffect, useRef } from 'react';
-import { ArrowUp, Square } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ArrowUp, Paperclip, Square, Video, X } from 'lucide-react';
+import type { Attachment } from '../../../shared/types';
+import { api } from '../lib/api';
 
 interface Props {
   value: string;
   onChange: (v: string) => void;
-  onSend: () => void;
+  onSend: (attachments: Attachment[]) => void;
   onStop: () => void;
   generating: boolean;
   disabled?: boolean;
   placeholder?: string;
   autoFocus?: boolean;
+  visionEnabled?: boolean;
 }
 
-const isTouch = () => window.matchMedia('(pointer: coarse)').matches;
+const isTouch = () => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
 
-export function Composer({ value, onChange, onSend, onStop, generating, disabled, placeholder, autoFocus }: Props) {
+export function Composer({
+  value,
+  onChange,
+  onSend,
+  onStop,
+  generating,
+  disabled,
+  placeholder,
+  autoFocus,
+  visionEnabled = false,
+}: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   useEffect(() => {
     const el = ref.current;
@@ -28,31 +45,139 @@ export function Composer({ value, onChange, onSend, onStop, generating, disabled
     if (autoFocus && !isTouch()) ref.current?.focus();
   }, [autoFocus]);
 
-  const canSend = !!value.trim() && !generating && !disabled;
+  const canSend = (!!value.trim() || attachments.length > 0) && !generating && !disabled && !uploading;
+
+  const handleSend = () => {
+    if (!canSend) return;
+    const attsToSend = [...attachments];
+    setAttachments([]);
+    setUploadError(null);
+    onSend(attsToSend);
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || !files.length) return;
+
+    if (attachments.length + files.length > 5) {
+      setUploadError('Maximum 5 files per message.');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    setUploading(true);
+    setUploadError(null);
+
+    try {
+      const fileList = Array.from(files);
+      const uploaded = await api.uploadFiles(fileList);
+      setAttachments((prev) => [...prev, ...uploaded]);
+    } catch (err) {
+      setUploadError((err as Error).message || 'Failed to upload files.');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const removeAttachment = (id: string) => {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+  };
 
   return (
     <div className="composer-wrap">
+      {attachments.length > 0 && (
+        <div className="composer-attachments" role="region" aria-label="Attached files">
+          {attachments.map((att) => (
+            <div key={att.id} className="attachment-chip">
+              {att.mimeType.startsWith('image/') ? (
+                <img src={att.url} alt={att.filename} className="attachment-thumb" />
+              ) : (
+                <div className="attachment-icon">
+                  <Video size={16} />
+                </div>
+              )}
+              <span className="attachment-name" title={att.filename}>
+                {att.filename}
+              </span>
+              <button
+                type="button"
+                className="attachment-remove"
+                onClick={() => removeAttachment(att.id)}
+                aria-label={`Remove ${att.filename}`}
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {uploading && (
+        <div className="upload-progress-bar" role="status">
+          <div className="upload-spinner" />
+          <span>Uploading media…</span>
+        </div>
+      )}
+
+      {uploadError && (
+        <div className="upload-error" role="alert">
+          <span>{uploadError}</span>
+          <button type="button" className="icon-btn sm" onClick={() => setUploadError(null)}>
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       <form
         className="composer"
         onSubmit={(e) => {
           e.preventDefault();
-          if (canSend) onSend();
+          handleSend();
         }}
       >
+        <input
+          type="file"
+          ref={fileInputRef}
+          accept="image/*,video/*"
+          multiple
+          onChange={handleFileChange}
+          style={{ display: 'none' }}
+          aria-hidden="true"
+        />
+
+        <button
+          type="button"
+          className={`attach-btn ${!visionEnabled ? 'unavailable' : ''}`}
+          onClick={() => fileInputRef.current?.click()}
+          disabled={disabled || !visionEnabled || uploading}
+          title={
+            visionEnabled
+              ? 'Attach photo or video (Camera roll & camera)'
+              : 'Photo & video understanding not configured on server'
+          }
+          aria-label={
+            visionEnabled
+              ? 'Attach photo or video'
+              : 'Photo & video understanding not configured on server'
+          }
+        >
+          <Paperclip size={20} />
+        </button>
+
         <textarea
           ref={ref}
           value={value}
           rows={1}
           enterKeyHint="send"
-          placeholder={placeholder ?? 'Message TRALIX AI'}
+          placeholder={placeholder ?? (visionEnabled ? 'Message or ask about a photo/video…' : 'Message TRALIX AI…')}
           aria-label="Message TRALIX AI"
           maxLength={12000}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => {
-            // Desktop: Enter sends, Shift+Enter = newline. Touch keyboards: Enter = newline.
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && !isTouch()) {
               e.preventDefault();
-              if (canSend) onSend();
+              handleSend();
             }
           }}
         />
@@ -66,7 +191,7 @@ export function Composer({ value, onChange, onSend, onStop, generating, disabled
           </button>
         )}
       </form>
-      <p className="disclaimer">TRALIX AI can make mistakes. Check important information.</p>
+      <p className="disclaimer">TRALIX AI V2 · Photos, videos &amp; memory. Check important information.</p>
     </div>
   );
 }

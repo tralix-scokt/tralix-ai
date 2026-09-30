@@ -4,7 +4,9 @@
   "private": true,
   "description": "TRALIX AI — a text-first AI assistant with real-time web knowledge.",
   "type": "module",
-  "engines": { "node": ">=20.12" },
+  "engines": {
+    "node": ">=20.12"
+  },
   "scripts": {
     "dev": "concurrently -k -n server,web -c blue,magenta \"npm:dev:server\" \"npm:dev:web\"",
     "dev:server": "tsx watch server/index.ts",
@@ -17,13 +19,19 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "better-sqlite3": "^13.0.3",
+    "@aws-sdk/client-s3": "^3.1143.0",
+    "@aws-sdk/s3-request-presigner": "^3.1143.0",
+    "@types/cookie-parser": "^1.4.10",
+    "@types/multer": "^2.3.0",
+    "@types/pg": "^8.23.1",
+    "cookie-parser": "^1.4.7",
     "express": "^5.1.0",
+    "multer": "^2.4.0",
+    "pg": "^8.23.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {
     "@fontsource-variable/inter": "^5.2.0",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.0",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
@@ -31,6 +39,7 @@
     "@vitejs/plugin-react": "^5.0.0",
     "concurrently": "^9.0.0",
     "lucide-react": "^0.500.0",
+    "pg-mem": "^3.0.14",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.0.0",

@@ -26,19 +26,23 @@ const bool = (k: string, d: boolean): boolean => {
 };
 
 export type SearchProviderName = 'tavily' | 'brave' | 'searxng';
+export type ImageProviderName = 'nvidia' | 'openai';
 
 export interface Config {
   port: number;
   host: string;
   nodeEnv: string;
+  databaseUrl?: string;
   databasePath: string;
   trustProxy: boolean;
+  sessionSecret: string;
+  googleClientId?: string;
   llm: {
-    /** OpenAI-compatible base URL, e.g. https://api.openai.com/v1 */
+    /** OpenAI-compatible base URL, e.g. https://api.openai.com/v1 or https://integrate.api.nvidia.com/v1 */
     baseUrl: string;
     apiKey?: string;
     model?: string;
-    /** Model for short utility calls (titles). Defaults to `model`. */
+    /** Model for short utility calls (titles, memory extraction). Defaults to `model`. */
     titleModel?: string;
     temperature: number;
     maxOutputTokens: number;
@@ -47,6 +51,26 @@ export interface Config {
     toolsEnabled: boolean;
     /** Whether an API key is required (false for local servers like Ollama). */
     requireKey: boolean;
+  };
+  vision: {
+    baseUrl: string;
+    apiKey?: string;
+    model: string;
+  };
+  image: {
+    provider: ImageProviderName;
+    baseUrl: string;
+    apiKey?: string;
+    model: string;
+    dailyLimit: number;
+  };
+  storage: {
+    endpoint?: string;
+    accessKey?: string;
+    secretKey?: string;
+    bucket?: string;
+    region: string;
+    uploadDir: string;
   };
   search: {
     provider?: SearchProviderName;
@@ -63,6 +87,7 @@ export interface Config {
     maxToolRounds: number;
     chatPerMinute: number;
     apiPerMinute: number;
+    authPerMinute: number;
     maxConversationsPerUser: number;
   };
 }
@@ -78,23 +103,50 @@ function resolveSearchProvider(): SearchProviderName | undefined {
 }
 
 export function loadConfig(): Config {
-  const baseUrl = (str('LLM_BASE_URL') ?? 'https://api.openai.com/v1').replace(/\/+$/, '');
+  const baseUrl = (str('LLM_BASE_URL') ?? 'https://integrate.api.nvidia.com/v1').replace(/\/+$/, '');
+  const llmKey = str('LLM_API_KEY') ?? str('NVIDIA_API_KEY');
+  const visionBaseUrl = (str('VISION_BASE_URL') ?? 'https://integrate.api.nvidia.com/v1').replace(/\/+$/, '');
+  const imageBaseUrl = (str('IMAGE_BASE_URL') ?? 'https://ai.api.nvidia.com/v1/genai').replace(/\/+$/, '');
+
   return {
     port: int('PORT', 8787),
     host: str('HOST') ?? '0.0.0.0',
     nodeEnv: str('NODE_ENV') ?? 'development',
+    databaseUrl: str('DATABASE_URL'),
     databasePath: str('DATABASE_PATH') ?? path.resolve(process.cwd(), 'data', 'tralix.db'),
     trustProxy: bool('TRUST_PROXY', true),
+    sessionSecret: str('SESSION_SECRET') ?? 'tralix-secret-dev-session-change-in-production',
+    googleClientId: str('GOOGLE_CLIENT_ID'),
     llm: {
       baseUrl,
-      apiKey: str('LLM_API_KEY'),
-      model: str('LLM_MODEL'),
-      titleModel: str('LLM_TITLE_MODEL') ?? str('LLM_MODEL'),
+      apiKey: llmKey,
+      model: str('LLM_MODEL') ?? 'z-ai/glm-5.3',
+      titleModel: str('LLM_TITLE_MODEL') ?? str('LLM_MODEL') ?? 'z-ai/glm-5.3',
       temperature: Number.parseFloat(env.LLM_TEMPERATURE ?? '') || 0.7,
       maxOutputTokens: int('LLM_MAX_OUTPUT_TOKENS', 2048),
       requestTimeoutMs: int('LLM_TIMEOUT_MS', 90_000),
       toolsEnabled: bool('LLM_TOOLS', true),
       requireKey: bool('LLM_REQUIRE_KEY', true),
+    },
+    vision: {
+      baseUrl: visionBaseUrl,
+      apiKey: str('VISION_API_KEY') ?? llmKey,
+      model: str('VISION_MODEL') ?? 'meta/llama-3.2-11b-vision-instruct',
+    },
+    image: {
+      provider: (str('IMAGE_PROVIDER')?.toLowerCase() as ImageProviderName) ?? 'nvidia',
+      baseUrl: imageBaseUrl,
+      apiKey: str('IMAGE_API_KEY') ?? llmKey,
+      model: str('IMAGE_MODEL') ?? 'black-forest-labs/flux.1-schnell',
+      dailyLimit: int('IMAGE_DAILY_LIMIT_PER_USER', 10),
+    },
+    storage: {
+      endpoint: str('STORAGE_ENDPOINT') ?? str('S3_ENDPOINT'),
+      accessKey: str('STORAGE_ACCESS_KEY') ?? str('S3_ACCESS_KEY_ID'),
+      secretKey: str('STORAGE_SECRET_KEY') ?? str('S3_SECRET_ACCESS_KEY'),
+      bucket: str('STORAGE_BUCKET') ?? str('S3_BUCKET_NAME'),
+      region: str('STORAGE_REGION') ?? 'auto',
+      uploadDir: str('UPLOAD_DIR') ?? path.resolve(process.cwd(), 'data', 'uploads'),
     },
     search: {
       provider: resolveSearchProvider(),
@@ -111,6 +163,7 @@ export function loadConfig(): Config {
       maxToolRounds: int('MAX_TOOL_ROUNDS', 3),
       chatPerMinute: int('RATE_LIMIT_CHAT_PER_MIN', 20),
       apiPerMinute: int('RATE_LIMIT_API_PER_MIN', 240),
+      authPerMinute: int('RATE_LIMIT_AUTH_PER_MIN', 10),
       maxConversationsPerUser: int('MAX_CONVERSATIONS_PER_USER', 500),
     },
   };

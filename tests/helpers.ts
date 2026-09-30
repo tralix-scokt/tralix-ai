@@ -4,7 +4,7 @@ import { createApp } from '../server/app.js';
 import { loadConfig } from '../server/config.js';
 import { OpenAICompatibleProvider } from '../server/providers/text/openaiCompatible.js';
 import type { Providers } from '../server/providers/registry.js';
-import type { SearchProvider } from '../server/providers/types.js';
+import type { ImageGenerationProvider, SearchProvider, VisionProvider } from '../server/providers/types.js';
 import { readSSE } from '../shared/sse.js';
 import type { StreamEvent } from '../shared/types.js';
 
@@ -51,18 +51,37 @@ export async function startMockLlm(): Promise<MockLlm> {
   return mock;
 }
 
-export async function startApp(mock: MockLlm, overrides: { search?: SearchProvider; apiKey?: string } = {}) {
+export async function startApp(
+  mock: MockLlm,
+  overrides: {
+    search?: SearchProvider;
+    apiKey?: string;
+    imageGeneration?: ImageGenerationProvider;
+    vision?: VisionProvider;
+  } = {},
+) {
   const cfg = loadConfig();
-  cfg.databasePath = ':memory:';
-  cfg.llm = { ...cfg.llm, baseUrl: mock.url, apiKey: overrides.apiKey ?? 'sk-test-secret', model: 'test-model', titleModel: 'test-model' };
+  cfg.databaseUrl = undefined; // Force in-memory pg-mem database for tests
+  cfg.llm = {
+    ...cfg.llm,
+    baseUrl: mock.url,
+    apiKey: overrides.apiKey ?? 'sk-test-secret',
+    model: 'test-model',
+    titleModel: 'test-model',
+  };
   cfg.limits.chatPerMinute = 1000;
+  cfg.limits.authPerMinute = 1000;
   cfg.weatherEnabled = false;
+
   const providers: Providers = {
     text: new OpenAICompatibleProvider(cfg.llm),
     search: overrides.search,
     weatherEnabled: false,
+    imageGeneration: overrides.imageGeneration,
+    vision: overrides.vision,
   };
-  const { app, repo } = createApp({ cfg, providers, webDir: '/nonexistent' });
+
+  const { app, pool, repo } = await createApp({ cfg, providers, webDir: '/nonexistent' });
   const server = http.createServer(app);
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -71,11 +90,17 @@ export async function startApp(mock: MockLlm, overrides: { search?: SearchProvid
     const r = await fetch(`${base}/api/session`, { method: 'POST' });
     return ((await r.json()) as { token: string }).token;
   };
+
   const api = (token: string, path: string, init: RequestInit = {}) =>
     fetch(`${base}/api${path}`, {
       ...init,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...(init.headers ?? {}) },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        ...(init.headers ?? {}),
+      },
     });
+
   const chat = async (token: string, body: unknown, signal?: AbortSignal) => {
     const res = await api(token, '/chat', { method: 'POST', body: JSON.stringify(body), signal });
     const events: StreamEvent[] = [];
@@ -84,5 +109,21 @@ export async function startApp(mock: MockLlm, overrides: { search?: SearchProvid
     }
     return { res, events };
   };
-  return { base, repo, session, api, chat, close: () => new Promise<void>((r) => server.close(() => r())) };
+
+  return {
+    base,
+    pool,
+    repo,
+    session,
+    api,
+    chat,
+    close: async () => {
+      try {
+        await pool.end();
+      } catch {
+        /* ignore */
+      }
+      return new Promise<void>((r) => server.close(() => r()));
+    },
+  };
 }

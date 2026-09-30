@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AiStatus, ChatMessage, ConversationSummary } from '../../../shared/types';
+import type { Attachment, AiStatus, ChatMessage, ConversationSummary } from '../../../shared/types';
 import { api, ApiError, streamChat } from './api';
 
 export interface ChatError {
@@ -13,12 +13,14 @@ export interface UseChatOptions {
   onConversation: (c: ConversationSummary) => void;
   /** Called when a send fails before anything was saved, so the composer can restore the text. */
   onRestoreDraft: (text: string) => void;
+  /** Called when memory was updated in background. */
+  onMemoryUpdated?: () => void;
 }
 
 const tmpId = () => `tmp-${crypto.randomUUID()}`;
 
 /** All chat state for the active conversation, including streaming. */
-export function useChat({ onConversation, onRestoreDraft }: UseChatOptions) {
+export function useChat({ onConversation, onRestoreDraft, onMemoryUpdated }: UseChatOptions) {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -30,8 +32,8 @@ export function useChat({ onConversation, onRestoreDraft }: UseChatOptions) {
   const abortRef = useRef<AbortController | null>(null);
   const runRef = useRef(0);
   const convRef = useRef<string | null>(null);
-  const cbs = useRef({ onConversation, onRestoreDraft });
-  cbs.current = { onConversation, onRestoreDraft };
+  const cbs = useRef({ onConversation, onRestoreDraft, onMemoryUpdated });
+  cbs.current = { onConversation, onRestoreDraft, onMemoryUpdated };
 
   const setConv = (id: string | null) => {
     convRef.current = id;
@@ -42,7 +44,12 @@ export function useChat({ onConversation, onRestoreDraft }: UseChatOptions) {
 
   const run = useCallback(
     async (
-      req: { action: 'send' | 'regenerate' | 'edit' | 'continue'; content?: string; messageId?: string },
+      req: {
+        action: 'send' | 'regenerate' | 'edit' | 'continue';
+        content?: string;
+        messageId?: string;
+        attachmentIds?: string[];
+      },
       optimistic: (prev: ChatMessage[]) => ChatMessage[],
       draftOnEarlyFailure?: string,
     ) => {
@@ -84,8 +91,9 @@ export function useChat({ onConversation, onRestoreDraft }: UseChatOptions) {
               setConv(ev.conversation.id);
               setTitle(ev.conversation.title);
               cbs.current.onConversation(ev.conversation);
-              if (window.location.pathname !== `/c/${ev.conversation.id}`)
+              if (window.location.pathname !== `/c/${ev.conversation.id}`) {
                 window.history.replaceState(null, '', `/c/${ev.conversation.id}`);
+              }
               const aid = assistantId;
               setMessages((prev) => {
                 let next = prev;
@@ -94,7 +102,7 @@ export function useChat({ onConversation, onRestoreDraft }: UseChatOptions) {
                   const idx = next.findIndex((m) => m.role === 'user' && (m.id.startsWith('tmp-') || m.id === um.id));
                   next = idx >= 0 ? next.map((m, i) => (i === idx ? um : m)) : [...next, um];
                 }
-                if (!next.some((m) => m.id === aid))
+                if (!next.some((m) => m.id === aid)) {
                   next = [
                     ...next,
                     {
@@ -107,6 +115,7 @@ export function useChat({ onConversation, onRestoreDraft }: UseChatOptions) {
                       createdAt: Date.now(),
                     },
                   ];
+                }
                 return next;
               });
               break;
@@ -125,13 +134,17 @@ export function useChat({ onConversation, onRestoreDraft }: UseChatOptions) {
             }
             case 'title':
               setTitle(ev.title);
-              if (convRef.current)
+              if (convRef.current) {
                 cbs.current.onConversation({
                   id: convRef.current,
                   title: ev.title,
                   createdAt: 0,
                   updatedAt: Date.now(),
                 });
+              }
+              break;
+            case 'memory_updated':
+              cbs.current.onMemoryUpdated?.();
               break;
             case 'done': {
               flushNow();
@@ -150,7 +163,7 @@ export function useChat({ onConversation, onRestoreDraft }: UseChatOptions) {
         flushNow();
         const msg = e instanceof ApiError ? e.message : 'Something went wrong. Please try again.';
         if (!saved) {
-          // Rejected before anything was stored: undo the optimistic UI and hand the text back.
+          // Rejected before anything was stored: undo optimistic UI
           setMessages((prev) => prev.filter((m) => !m.id.startsWith('tmp-')));
           if (draftOnEarlyFailure) cbs.current.onRestoreDraft(draftOnEarlyFailure);
           if (convRef.current === null) setTitle('');
@@ -163,7 +176,6 @@ export function useChat({ onConversation, onRestoreDraft }: UseChatOptions) {
           const id = assistantId;
           const stoppedByUser = ctl.signal.aborted;
           setMessages((prev) => {
-            // A stopped/failed reply keeps its partial text; empty placeholders disappear.
             const next = prev.filter((m) => !(m.id === id && m.role === 'assistant' && !m.content));
             return stoppedByUser
               ? next.map((m) => (m.id === id && m.status === 'complete' ? { ...m, status: 'stopped' as const } : m))
@@ -179,19 +191,30 @@ export function useChat({ onConversation, onRestoreDraft }: UseChatOptions) {
   );
 
   const send = useCallback(
-    (text: string) => {
+    (text: string, attachments?: Attachment[]) => {
       const content = text.trim();
-      if (!content) return;
+      const hasAtts = attachments && attachments.length > 0;
+      if (!content && !hasAtts) return;
+
       const um: ChatMessage = {
         id: tmpId(),
         conversationId: convRef.current ?? '',
         role: 'user',
         content,
+        attachments: attachments ?? [],
         status: 'complete',
         sources: [],
         createdAt: Date.now(),
       };
-      return run({ action: 'send', content }, (prev) => [...prev, um], content);
+      return run(
+        {
+          action: 'send',
+          content,
+          attachmentIds: attachments?.map((a) => a.id),
+        },
+        (prev) => [...prev, um],
+        content,
+      );
     },
     [run],
   );
@@ -216,7 +239,9 @@ export function useChat({ onConversation, onRestoreDraft }: UseChatOptions) {
   );
 
   const continueGeneration = useCallback(() => {
-    return run({ action: 'continue' }, (prev) => prev.map((m, i) => (i === prev.length - 1 ? { ...m, status: 'complete' as const } : m)));
+    return run({ action: 'continue' }, (prev) =>
+      prev.map((m, i) => (i === prev.length - 1 ? { ...m, status: 'complete' as const } : m)),
+    );
   }, [run]);
 
   const openConversation = useCallback(async (id: string | null) => {

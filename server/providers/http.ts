@@ -33,6 +33,23 @@ export async function fetchJson<T>(
   }
 }
 
+export async function postJson<T>(
+  url: string,
+  headers: Record<string, string>,
+  body: unknown,
+  timeoutMs = 60_000,
+  signal?: AbortSignal,
+): Promise<T> {
+  return fetchJson<T>(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+    timeoutMs,
+    label: 'upstream',
+    signal,
+  });
+}
+
 export const isHttpUrl = (u: unknown): u is string => {
   if (typeof u !== 'string') return false;
   try {
