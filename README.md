@@ -77,7 +77,7 @@ LLM_API_KEY
 <paste-your-nvapi-key-here>
 
 LLM_MODEL
-meta/llama-3.3-70b-instruct
+z-ai/glm-5.3
 
 VISION_BASE_URL
 https://integrate.api.nvidia.com/v1

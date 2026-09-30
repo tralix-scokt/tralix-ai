@@ -120,8 +120,8 @@ export function loadConfig(): Config {
     llm: {
       baseUrl,
       apiKey: llmKey,
-      model: str('LLM_MODEL') ?? 'meta/llama-3.3-70b-instruct',
-      titleModel: str('LLM_TITLE_MODEL') ?? str('LLM_MODEL') ?? 'meta/llama-3.3-70b-instruct',
+      model: str('LLM_MODEL') ?? 'z-ai/glm-5.3',
+      titleModel: str('LLM_TITLE_MODEL') ?? str('LLM_MODEL') ?? 'z-ai/glm-5.3',
       temperature: Number.parseFloat(env.LLM_TEMPERATURE ?? '') || 0.7,
       maxOutputTokens: int('LLM_MAX_OUTPUT_TOKENS', 2048),
       requestTimeoutMs: int('LLM_TIMEOUT_MS', 90_000),
